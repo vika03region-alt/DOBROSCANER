@@ -10,6 +10,11 @@ export default defineConfig(({ mode }) => {
       'process.env': env
     },
     server: {
+      host: true, // Listen on all addresses, including LAN and public addresses
+      port: 3000
+    },
+    preview: {
+      host: true,
       port: 3000
     }
   };

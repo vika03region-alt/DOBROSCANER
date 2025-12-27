@@ -28,6 +28,19 @@ const VULNERABILITIES = [
   "[LOW] Cookie missing 'HttpOnly' and 'Secure' flags",
 ];
 
+const GIT_LEAKS = [
+  "[GIT] .git directory exposed via HTTP at /.git/",
+  "[GIT] Found config file at /.git/config indicating remote 'origin'",
+  "[CRITICAL] AWS Access Key detected in .git/logs/HEAD",
+  "[HIGH] Hardcoded JDBC string in 'src/main/resources/application.properties' (staged)",
+  "[MEDIUM] Internal email addresses found in 'git log' authors",
+  "[INFO] Repository appears to be a mirror of 'private-backend-v2'",
+  "[GIT] Object traversal successful: /.git/objects/00/...",
+  "[CRITICAL] Unencrypted SSH private key found in commit history (id_rsa)",
+  "[HIGH] Google Cloud Service Account JSON key found in file 'gcp-creds.json'",
+  "[MEDIUM] '.env' file tracked in git repository (potential secret leak)",
+];
+
 export class ScanSimulation {
   private config: ScanConfig;
 
@@ -56,6 +69,31 @@ export class ScanSimulation {
       return `${Math.floor(Math.random() * 223) + 1}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
   }
 
+  // Generates small batches of logs for continuous mode
+  generateMonitoringLogs(): string[] {
+    const logs: string[] = [];
+    const events = [
+        "[MONITOR] Heartbeat: Target is responsive (23ms)",
+        "[MONITOR] Checking for new open ports...",
+        "[MONITOR] Re-verifying SSL certificate validity...",
+        "[NET] Incoming packet rate normal",
+        "[IDS] No active intrusion attempts detected in last 60s"
+    ];
+
+    logs.push(events[Math.floor(Math.random() * events.length)]);
+
+    // Random chance to find something new in continuous mode
+    if (Math.random() > 0.8) {
+        if (this.config.modules.gitLeak && Math.random() > 0.5) {
+            logs.push(GIT_LEAKS[Math.floor(Math.random() * GIT_LEAKS.length)]);
+        } else if (this.config.modules.vulnCheck) {
+            logs.push("[WARN] New potential vulnerability signature matched on port 80");
+        }
+    }
+    
+    return logs;
+  }
+
   generateLogs(): string[] {
     const target = this.config.target || 'localhost';
     const steps: string[] = [];
@@ -66,7 +104,7 @@ export class ScanSimulation {
 
     // Initialization
     steps.push(`[INFO] Starting LWSCAN v2.4.0-pro`);
-    steps.push(`[INFO] Loaded configuration: Threads=${this.config.threads}, Timeout=5000ms`);
+    steps.push(`[INFO] Loaded configuration: Threads=${this.config.threads}, Mode=${this.config.continuous ? 'CONTINUOUS' : 'ONE-SHOT'}`);
     
     if (!isIP) {
         steps.push(`[DNS] Resolving target ${target}...`);
@@ -107,6 +145,24 @@ export class ScanSimulation {
       }
     }
 
+    // Git Leaks Module
+    if (this.config.modules.gitLeak) {
+        steps.push(`[GIT] Checking for exposed repositories and secrets...`);
+        steps.push(`[GIT] Fuzzing for .git, .env, and backup files...`);
+        
+        // Higher chance of finding something if specifically enabled
+        if (Math.random() > 0.4) {
+             const detectedLeaks = GIT_LEAKS.filter(() => Math.random() > 0.6);
+             if (detectedLeaks.length > 0) {
+                 detectedLeaks.forEach(leak => steps.push(leak));
+             } else {
+                 steps.push(`[GIT] No exposed git repositories found via standard wordlists.`);
+             }
+        } else {
+            steps.push(`[GIT] No secrets detected in public endpoints.`);
+        }
+    }
+
     // WHOIS Module
     if (this.config.modules.whois) {
       steps.push(`[INFO] Querying WHOIS database...`);
@@ -132,8 +188,12 @@ export class ScanSimulation {
       }
     }
 
-    steps.push(`[INFO] Cleaning up temporary files...`);
-    steps.push(`[INFO] Scan completed successfully.`);
+    if (!this.config.continuous) {
+        steps.push(`[INFO] Cleaning up temporary files...`);
+        steps.push(`[INFO] Scan completed successfully.`);
+    } else {
+        steps.push(`[INFO] Initial scan complete. Entering continuous monitoring mode...`);
+    }
     
     return steps;
   }

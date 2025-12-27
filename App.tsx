@@ -6,7 +6,7 @@ import ScanHistory from './components/ScanHistory';
 import { ScanConfig, ScanStatus, ScanResult, Severity } from './types';
 import { analyzeScanLogs } from './services/geminiService';
 import { ScanSimulation } from './services/simulationService';
-import { Play, Loader2, AlertTriangle, CheckCircle, Zap, Terminal, Shield, StopCircle } from 'lucide-react';
+import { Play, Loader2, AlertTriangle, CheckCircle, Zap, Terminal, Shield, StopCircle, Infinity as InfinityIcon, GitBranch } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -15,8 +15,9 @@ const App: React.FC = () => {
   const [scanConfig, setScanConfig] = useState<ScanConfig>({
     target: '',
     ports: '80,443',
-    modules: { portScan: true, whois: false, bannerGrab: true, vulnCheck: true },
-    threads: 4
+    modules: { portScan: true, whois: false, bannerGrab: true, vulnCheck: true, gitLeak: false },
+    threads: 4,
+    continuous: false
   });
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   
@@ -28,9 +29,22 @@ const App: React.FC = () => {
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
-  // Refs for scan loop control
+  // Refs for scan loop control to avoid stale closures
   const scanQueueRef = useRef<string[]>([]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const simulationRef = useRef<ScanSimulation | null>(null);
+  
+  // Critical: Keep refs synchronized with state for the async loop
+  const statusRef = useRef(scanStatus);
+  const configRef = useRef(scanConfig);
+
+  useEffect(() => {
+    statusRef.current = scanStatus;
+  }, [scanStatus]);
+
+  useEffect(() => {
+    configRef.current = scanConfig;
+  }, [scanConfig]);
 
   // Save history to localStorage whenever it changes
   useEffect(() => {
@@ -45,14 +59,34 @@ const App: React.FC = () => {
   }, []);
 
   const processLogQueue = () => {
+    // Check if user stopped the scan via state ref
+    if (statusRef.current !== ScanStatus.RUNNING) {
+        return; 
+    }
+
     if (scanQueueRef.current.length === 0) {
+      // Logic for Continuous Mode
+      if (configRef.current.continuous) {
+          if (simulationRef.current) {
+              const monitoringLogs = simulationRef.current.generateMonitoringLogs();
+              scanQueueRef.current.push(...monitoringLogs);
+              // Pause between monitoring batches
+              timeoutRef.current = setTimeout(processLogQueue, 2500); 
+              return;
+          }
+      }
+
       setScanStatus(ScanStatus.COMPLETED);
       return;
     }
 
     const nextLog = scanQueueRef.current.shift();
     if (nextLog) {
-      setLogs(prev => [...prev, nextLog]);
+      setLogs(prev => {
+        // Keep logs from growing infinitely in continuous mode (max 200 lines for performance)
+        const newLogs = [...prev, nextLog];
+        return newLogs.length > 200 ? newLogs.slice(newLogs.length - 200) : newLogs;
+      });
     }
 
     // Variable speed based on log type to mimic real scanner latency
@@ -61,6 +95,8 @@ const App: React.FC = () => {
     if (nextLog?.includes('[VULN]')) delay = 400;
     if (nextLog?.includes('[DATA]')) delay = 200;
     if (nextLog?.includes('[WARN]')) delay = 300;
+    if (nextLog?.includes('[GIT]')) delay = 350;
+    if (nextLog?.includes('[MONITOR]')) delay = 800; 
 
     timeoutRef.current = setTimeout(processLogQueue, delay);
   };
@@ -76,23 +112,27 @@ const App: React.FC = () => {
 
     // Generate full scan path
     const simulation = new ScanSimulation(scanConfig);
+    simulationRef.current = simulation; 
     const fullLogs = simulation.generateLogs();
     
     // Queue logs for "streaming" effect
     scanQueueRef.current = fullLogs;
     
-    // Start processing
-    processLogQueue();
+    // Start processing (give state a moment to update refs via useEffect)
+    setTimeout(() => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        processLogQueue();
+    }, 100);
   };
 
   const stopScan = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     scanQueueRef.current = [];
-    setLogs(prev => [...prev, "[!] Scan aborted by user."]);
+    setLogs(prev => [...prev, "[!] Scan/Monitoring aborted by user."]);
     setScanStatus(ScanStatus.FAILED);
   };
 
-  // Watch for completion to save result
+  // Watch for completion to save result (only if not continuous, or manually analyzed)
   useEffect(() => {
     if (scanStatus === ScanStatus.COMPLETED && logs.length > 0) {
       setLastResult({
@@ -104,21 +144,24 @@ const App: React.FC = () => {
   }, [scanStatus, logs, scanConfig.target]);
 
   const handleAnalyze = async () => {
-    if (!lastResult) return;
+    if (!lastResult && logs.length === 0) return;
+    
+    const targetLogs = lastResult ? lastResult.logs : logs;
+    const targetName = lastResult ? lastResult.target : scanConfig.target;
+
     setIsAnalyzing(true);
     try {
-      const analysis = await analyzeScanLogs(lastResult.logs, lastResult.target);
+      const analysis = await analyzeScanLogs(targetLogs, targetName);
       
       const fullResult: ScanResult = { 
-        ...lastResult, 
+        target: targetName,
+        timestamp: new Date().toISOString(),
+        logs: targetLogs,
         analysis 
       };
 
       setLastResult(fullResult);
-      
-      // Save to history
       setScanHistory(prev => [fullResult, ...prev]);
-      
       setActiveTab('results');
     } catch (e) {
       console.error(e);
@@ -133,7 +176,6 @@ const App: React.FC = () => {
     setActiveTab('results');
   };
 
-  // Function to clear history
   const clearHistory = () => {
     if(confirm('Are you sure you want to clear all scan history?')) {
         setScanHistory([]);
@@ -192,6 +234,25 @@ const App: React.FC = () => {
                       className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all font-mono"
                     />
                   </div>
+                  
+                  <div className={`p-4 rounded-lg border transition-all ${scanConfig.continuous ? 'bg-blue-900/20 border-blue-500/50' : 'bg-slate-900/30 border-slate-700/50'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                            <InfinityIcon size={16} className={scanConfig.continuous ? "text-blue-400" : "text-slate-500"} />
+                            Continuous Mode
+                        </label>
+                        <div 
+                          onClick={() => setScanConfig(prev => ({...prev, continuous: !prev.continuous}))}
+                          className={`w-10 h-5 rounded-full p-0.5 transition-colors duration-200 relative cursor-pointer ${scanConfig.continuous ? 'bg-blue-600' : 'bg-slate-700'}`}
+                        >
+                          <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 absolute top-0.5 ${scanConfig.continuous ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </div>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                        Keeps scanning for changes. Ideal for monitoring live deployments.
+                    </p>
+                  </div>
+
                    <div>
                     <label className="block text-sm font-medium text-slate-400 mb-2">Threads</label>
                     <input 
@@ -214,7 +275,8 @@ const App: React.FC = () => {
                   <div className="space-y-3">
                     {Object.entries(scanConfig.modules).map(([key, value]) => (
                       <label key={key} className="flex items-center justify-between cursor-pointer group hover:bg-slate-800/50 p-2 rounded transition-all">
-                        <span className="text-slate-400 capitalize group-hover:text-white transition-colors font-mono text-sm">
+                        <span className="text-slate-400 capitalize group-hover:text-white transition-colors font-mono text-sm flex items-center gap-2">
+                          {key === 'gitLeak' && <GitBranch size={14} className={value ? "text-orange-500" : "text-slate-500"} />}
                           {key.replace(/([A-Z])/g, ' $1').trim()}
                         </span>
                         <div 
@@ -233,10 +295,10 @@ const App: React.FC = () => {
                 <button
                   onClick={startScan}
                   disabled={scanStatus === ScanStatus.RUNNING}
-                  className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
+                  className={`text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95 ${scanConfig.continuous ? 'bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.3)]' : 'bg-green-600 hover:bg-green-500'}`}
                 >
                   {scanStatus === ScanStatus.RUNNING ? <Loader2 className="animate-spin" /> : <Play size={20} />}
-                  Execute Scan
+                  {scanConfig.continuous ? 'Start Monitoring' : 'Execute Scan'}
                 </button>
               </div>
             </div>
@@ -252,13 +314,13 @@ const App: React.FC = () => {
                      Live Console
                    </h2>
                    {scanStatus === ScanStatus.RUNNING && (
-                     <span className="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-400 animate-pulse border border-green-500/30">
-                       SCANNING
+                     <span className={`px-2 py-0.5 rounded text-xs animate-pulse border ${scanConfig.continuous ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-green-500/20 text-green-400 border-green-500/30'}`}>
+                       {scanConfig.continuous ? 'MONITORING' : 'SCANNING'}
                      </span>
                    )}
                    {scanStatus === ScanStatus.FAILED && (
                      <span className="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-400 border border-red-500/30">
-                       ABORTED
+                       STOPPED
                      </span>
                    )}
                  </div>
@@ -272,7 +334,7 @@ const App: React.FC = () => {
                         <StopCircle size={16} /> Stop
                       </button>
                    ) : (
-                      scanStatus === ScanStatus.COMPLETED && (
+                      (scanStatus === ScanStatus.COMPLETED || scanStatus === ScanStatus.FAILED) && logs.length > 0 && (
                         <button 
                           onClick={handleAnalyze}
                           disabled={isAnalyzing}
@@ -381,8 +443,10 @@ const App: React.FC = () => {
            <h1 className="text-xl font-bold capitalize text-white tracking-tight">{activeTab.replace('-', ' ')}</h1>
            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span className="text-xs text-slate-300 font-mono">System Ready</span>
+                <div className={`w-2 h-2 rounded-full ${scanConfig.continuous && scanStatus === ScanStatus.RUNNING ? 'bg-blue-500' : 'bg-green-500'} animate-pulse`}></div>
+                <span className="text-xs text-slate-300 font-mono">
+                  {scanConfig.continuous && scanStatus === ScanStatus.RUNNING ? 'MONITORING' : 'System Ready'}
+                </span>
               </div>
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-green-500 to-emerald-700 border-2 border-slate-800 shadow-lg flex items-center justify-center text-xs font-bold text-white">
                 LW

@@ -40,6 +40,8 @@ export interface ScanConfig {
     whois: boolean;
     bannerGrab: boolean;
     vulnCheck: boolean;
+    gitLeak: boolean;
   };
   threads: number;
+  continuous: boolean;
 }
