@@ -443,9 +443,16 @@ const App: React.FC = () => {
            <h1 className="text-xl font-bold capitalize text-white tracking-tight">{activeTab.replace('-', ' ')}</h1>
            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700">
-                <div className={`w-2 h-2 rounded-full ${scanConfig.continuous && scanStatus === ScanStatus.RUNNING ? 'bg-blue-500' : 'bg-green-500'} animate-pulse`}></div>
+                <div className={`w-2 h-2 rounded-full ${
+                  scanStatus === ScanStatus.RUNNING 
+                    ? (scanConfig.continuous ? 'bg-blue-500' : 'bg-emerald-500') 
+                    : (scanStatus === ScanStatus.FAILED ? 'bg-red-500' : 'bg-green-500')
+                } ${scanStatus === ScanStatus.RUNNING ? 'animate-pulse' : ''}`}></div>
                 <span className="text-xs text-slate-300 font-mono">
-                  {scanConfig.continuous && scanStatus === ScanStatus.RUNNING ? 'MONITORING' : 'System Ready'}
+                  {scanStatus === ScanStatus.RUNNING 
+                    ? (scanConfig.continuous ? 'Continuous Mode' : 'Scanning...')
+                    : (scanStatus === ScanStatus.FAILED ? 'Scan Stopped' : 'System Ready')
+                  }
                 </span>
               </div>
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-green-500 to-emerald-700 border-2 border-slate-800 shadow-lg flex items-center justify-center text-xs font-bold text-white">
