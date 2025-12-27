@@ -6,7 +6,7 @@ import ScanHistory from './components/ScanHistory';
 import { ScanConfig, ScanStatus, ScanResult, Severity } from './types';
 import { analyzeScanLogs } from './services/geminiService';
 import { ScanSimulation } from './services/simulationService';
-import { Play, Loader2, AlertTriangle, CheckCircle, Save, Info, RefreshCw, Zap, Terminal, Shield, StopCircle } from 'lucide-react';
+import { Play, Loader2, AlertTriangle, CheckCircle, Zap, Terminal, Shield, StopCircle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
