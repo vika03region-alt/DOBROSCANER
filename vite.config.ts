@@ -6,8 +6,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Polyfill process.env for the existing code structure
-      'process.env': env
+      // Securely expose only the API_KEY
+      'process.env.API_KEY': JSON.stringify(env.API_KEY)
     },
     server: {
       host: true, // Listen on all addresses, including LAN and public addresses

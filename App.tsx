@@ -6,7 +6,7 @@ import ScanHistory from './components/ScanHistory';
 import { ScanConfig, ScanStatus, ScanResult, Severity } from './types';
 import { analyzeScanLogs } from './services/geminiService';
 import { ScanSimulation } from './services/simulationService';
-import { Play, Loader2, AlertTriangle, CheckCircle, Zap, Terminal, Shield, StopCircle, Infinity as InfinityIcon, GitBranch } from 'lucide-react';
+import { Play, Loader2, AlertTriangle, CheckCircle, Zap, Terminal, Shield, StopCircle, Infinity as InfinityIcon, GitBranch, Copy, Code } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -181,6 +181,11 @@ const App: React.FC = () => {
         setScanHistory([]);
         localStorage.removeItem('lwscan_history');
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert('Fix code copied to clipboard!');
   };
 
   const renderContent = () => {
@@ -416,11 +421,33 @@ const App: React.FC = () => {
                           </div>
                           <p className="text-slate-400 text-sm mb-4 leading-relaxed font-light">{vuln.description}</p>
                           
-                          <div className="bg-slate-900/80 rounded-lg p-4 border-l-4 border-green-500">
-                             <h5 className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1 flex items-center gap-2">
-                                <CheckCircle size={12} /> Fix Recommendation
-                             </h5>
-                             <p className="text-slate-300 text-sm font-mono">{vuln.remediation}</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="bg-slate-900/80 rounded-lg p-4 border-l-4 border-green-500">
+                                <h5 className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1 flex items-center gap-2">
+                                    <CheckCircle size={12} /> Fix Strategy
+                                </h5>
+                                <p className="text-slate-300 text-sm font-mono">{vuln.remediation}</p>
+                              </div>
+
+                              {vuln.codeFix && (
+                                <div className="bg-black rounded-lg border border-slate-700 overflow-hidden flex flex-col">
+                                    <div className="bg-slate-900 px-3 py-1 border-b border-slate-800 flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Code size={12} className="text-blue-400" />
+                                            <span className="text-xs text-slate-400 font-mono">patch_code</span>
+                                        </div>
+                                        <button 
+                                            onClick={() => copyToClipboard(vuln.codeFix!)}
+                                            className="text-slate-500 hover:text-white transition-colors"
+                                        >
+                                            <Copy size={12} />
+                                        </button>
+                                    </div>
+                                    <div className="p-3 overflow-x-auto">
+                                        <pre className="text-xs text-blue-300 font-mono whitespace-pre-wrap">{vuln.codeFix}</pre>
+                                    </div>
+                                </div>
+                              )}
                           </div>
                        </div>
                     </div>

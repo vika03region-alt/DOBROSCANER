@@ -19,6 +19,7 @@ export interface Vulnerability {
   severity: Severity;
   description: string;
   remediation: string;
+  codeFix?: string; // AI generated code snippet or command
 }
 
 export interface ScanResult {
