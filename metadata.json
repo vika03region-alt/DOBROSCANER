@@ -1,0 +1,5 @@
+{
+  "name": "LWSCAN-Web",
+  "description": "A modern web interface for the LWSCAN concept. Features a simulated network scanner, log visualization, and Gemini-powered security analysis reports.",
+  "requestFramePermissions": []
+}
